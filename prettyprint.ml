@@ -23,6 +23,7 @@ let rec string_of_expr e = to_str (-1) e
       | Var  v -> (5, v)
       | Bool b -> (5, string_of_bool b)
       | Number n -> (5, Printf.sprintf "%g" n)
+      | If (p, c, a) -> (5, "if " ^ (to_str (-1) p) ^ " then " ^ (to_str (-1) c) ^ " else " ^ to_str (-1) a)
       | Apply (f, elist) -> (5, f ^ "(" ^ (comma_seq (fun e -> to_str (-1) e) elist) ^ ")")
       | Mult  (e1, e2) -> (4, (to_str 4 e1) ^ " * " ^ (to_str 5 e2))
       | Div   (e1, e2) -> (4, (to_str 4 e1) ^ " / " ^ (to_str 5 e2))

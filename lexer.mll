@@ -29,5 +29,8 @@ rule token = parse
   | "/"                  { DIV }
   | ","                  { COMMA }
   | ";"                  { SEMI }
+  | "if"                 { IF }
+  | "then"               { THEN }
+  | "else"               { ELSE }
   | ident                { IDENT (lexeme lexbuf) }
   | eof                  { EOF }

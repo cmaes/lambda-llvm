@@ -1,2 +1,3 @@
 fun succ (n) { n + 1 }
-succ(5);;
+let p = 10;;
+succ(p);;

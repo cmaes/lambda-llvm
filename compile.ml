@@ -32,7 +32,57 @@ let rec compile_expr = function
   | Plus (e1, e2) -> build_fadd (compile_expr e1) (compile_expr e2) "addtmp" builder
   | Minus (e1, e2) -> build_fsub (compile_expr e1) (compile_expr e2) "subtmp" builder
   | Equal (e1, e2) -> build_fcmp Fcmp.Ueq (compile_expr e1) (compile_expr e2) "eqtmp" builder
-  | Less (e1, e2) -> build_fcmp Fcmp.Ule (compile_expr e1) (compile_expr e2) "letmp" builder
+  | Less (e1, e2) -> build_fcmp Fcmp.Ult (compile_expr e1) (compile_expr e2) "letmp" builder
+  | If (pe, ce, ae) -> let pred = compile_expr pe in
+
+                       (* Grab the first block so that we might later add the
+                          conditional branch to it at the end of the function *)
+                       let start_bb = insertion_block builder in
+                       let the_function = block_parent start_bb in
+
+                       let then_bb = append_block context "then" the_function in
+
+                       (* Emit 'then' value *)
+
+                       position_at_end then_bb builder;
+                       let then_val = compile_expr ce in
+
+                       (* Compilation of 'then' can change the current block, update then_bb
+                        * for the phi. We create a new because one is used for the phi node
+                        * and the other is used for the conditional branch *)
+                       let new_then_bb = insertion_block builder in
+
+                       (* Emit 'else' value *)
+                       let else_bb = append_block context "else" the_function in
+                       position_at_end else_bb builder;
+                       let else_val = compile_expr ae; in
+
+                       (* Compilation of 'else' can change the current block, update else_bb
+                          for the phi. *)
+
+                       let new_else_bb = insertion_block builder in
+
+                       (* Emit the merge block *)
+                       let merge_bb = append_block context "ifcont" the_function in
+                       position_at_end merge_bb builder;
+                       let incoming = [(then_val, new_then_bb); (else_val, new_else_bb)] in
+                       let phi = build_phi incoming "iftmp" builder in
+
+                       (* Return to the start block to add the conditional branch *)
+                       position_at_end start_bb builder;
+                       ignore (build_cond_br pred then_bb else_bb builder);
+
+                       (* Set an unconditional branch at the end of the 'then' block and the
+                          'else' block to the merge 'block' *)
+                       position_at_end new_then_bb builder;
+                       ignore (build_br merge_bb builder);
+                       position_at_end new_else_bb builder;
+                       ignore (build_br merge_bb builder);
+
+                       (* Finally, set the builder to the end of the merge block *)
+                       position_at_end merge_bb builder;
+
+                       phi
   | Apply (f, elist) ->  let callee =
                        match lookup_function f the_module with
                        | Some func -> func

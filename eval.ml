@@ -39,6 +39,9 @@ let rec eval ctx env = function
   | Less (e1, e2) -> (match (eval ctx env e1), (eval ctx env e2) with
                       | VFloat f1, VFloat f2 -> VBool (f1 < f2)
                       | _ -> runtime_error "Numbers expected in <")
+  | If (pe, ce, ae) -> (match (eval ctx env pe) with
+                        | VBool b -> if b then (eval ctx env ce) else (eval ctx env ae)
+                        | _ -> runtime_error "Boolean expected in if predicate")
   | Apply (f, elist) -> let params, func_expr = lookup_func ctx f in
                         let args = List.map (fun e -> eval ctx env e) elist in
                         let zipped = List.combine params args in

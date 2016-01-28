@@ -20,6 +20,9 @@
 %token EQUAL
 %token COMMA
 %token SEMI
+%token IF
+%token THEN
+%token ELSE
 %token EOF
 
 %start program
@@ -29,6 +32,7 @@
 %type <Syntax.toplevel_cmd> toplevel
 
 (* the order of the following is important to define precedence *)
+%nonassoc  ELSE
 %nonassoc EQUALEQUAL
 %nonassoc LESS
 %left PLUS MINUS
@@ -50,6 +54,7 @@ expr:
   | ap = app_expr   { ap }
   | a  = arith_expr { a }
   | b = bool_expr   { b }
+  | c = cond_expr   { c }
 
 simple_expr:
   | x = IDENT                 { Var x }
@@ -70,6 +75,10 @@ arith_expr:
 bool_expr:
   | e1 = expr; LESS; e2 = expr       { Less (e1, e2) }
   | e1 = expr; EQUALEQUAL; e2 = expr { Equal (e1, e2) }
+
+cond_expr:
+  | IF; pred = expr; THEN; conseq = expr; ELSE altern = expr
+  { If (pred, conseq, altern) }
 
 
 func_def:

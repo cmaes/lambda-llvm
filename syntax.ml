@@ -11,6 +11,7 @@ type expr =
   | Minus  of expr * expr           (* Difference [e1 - e2] *)
   | Equal  of expr * expr           (* Floating point comparison [ e1 == e2 ] *)
   | Less   of expr * expr           (* Floating point comparison [ e1 < e2 ] *)
+  | If     of expr * expr * expr    (* Conditional [ if pred then cons else altern ] *)
   | Apply  of ident * (expr list)   (* Application  [ f(e1, ..., en) ] *)
 
 type context = (ident list * expr) list
