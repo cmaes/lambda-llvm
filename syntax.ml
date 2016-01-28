@@ -11,14 +11,14 @@ type expr =
   | Minus  of expr * expr           (* Difference [e1 - e2] *)
   | Equal  of expr * expr           (* Floating point comparison [ e1 == e2 ] *)
   | Less   of expr * expr           (* Floating point comparison [ e1 < e2 ] *)
-  | Apply  of ident * expr          (* Application  [ f(e2) ] *)
+  | Apply  of ident * (expr list)   (* Application  [ f(e1, ..., en) ] *)
 
-type context = (ident * expr) list
+type context = (ident list * expr) list
 
 type toplevel_cmd =
-  | Expr of expr                    (* Expression *)
-  | Def of ident * expr              (* Value definition [ let x = e ] *)
-  | Fun of ident * ident * expr     (* Function [ fun f(x) { e } ] *)
+  | Expr of expr                               (* Expression *)
+  | Def of ident * expr                        (* Value definition [ let x = e ] *)
+  | Fun of ident * (ident list) * expr  (* Function [ fun f(x1, ..., xn) { e } ] *)
 
 type value =
   | VNull

@@ -1,0 +1,2 @@
+fun succ (n) { n + 1 }
+succ(5);;

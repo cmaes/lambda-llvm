@@ -18,7 +18,12 @@
 %token RBRACE
 %token LET
 %token EQUAL
+%token COMMA
+%token SEMI
 %token EOF
+
+%start program
+%type <Syntax.toplevel_cmd list> program
 
 %start toplevel
 %type <Syntax.toplevel_cmd> toplevel
@@ -30,10 +35,14 @@
 %left MULT DIV
 %%
 
+program:
+    | EOF                                      { [] }
+    | t = toplevel; l = program;               { t :: l }
+
 toplevel:
- | e = expr; EOF                        { Expr e }
- | LET; x = IDENT; EQUAL; e = expr; EOF { Def (x, e) }
- | f = func_def; EOF                    { f }
+ | e = expr; SEMI; SEMI                        { Expr e }
+ | LET; x = IDENT; EQUAL; e = expr; SEMI; SEMI { Def (x, e) }
+ | f = func_def;                               { f }
 
 
 expr:
@@ -42,8 +51,6 @@ expr:
   | a  = arith_expr { a }
   | b = bool_expr   { b }
 
-
-
 simple_expr:
   | x = IDENT                 { Var x }
   | b = BOOL                  { Bool b }
@@ -51,7 +58,7 @@ simple_expr:
   | LPAREN; e = expr; RPAREN  { e }
 
 app_expr:
-  | f = IDENT; LPAREN; e = expr; RPAREN    { Apply (f, e) }
+  | f = IDENT; LPAREN; args = expr_list; RPAREN    { Apply (f, args) }
 
 
 arith_expr:
@@ -66,7 +73,16 @@ bool_expr:
 
 
 func_def:
-  | FUN; f = IDENT; LPAREN; x = IDENT; RPAREN; LBRACE; e = expr; RBRACE { Fun(f, x, e) }
+  | FUN; f = IDENT; LPAREN; args = ident_list; RPAREN; LBRACE; e = expr; RBRACE
+   { Fun(f, args, e) }
 
+expr_list:
+  |                                  { []    }
+  | e = expr;                        { [e]   }
+  | e = expr; COMMA; el = expr_list  { e::el }
 
+ident_list:
+  |                                   { []    }
+  | i = IDENT;                        { [i]   }
+  | i = IDENT; COMMA; il = ident_list { i::il }
 %%

@@ -27,5 +27,7 @@ rule token = parse
   | "-"                  { MINUS }
   | "*"                  { MULT }
   | "/"                  { DIV }
+  | ","                  { COMMA }
+  | ";"                  { SEMI }
   | ident                { IDENT (lexeme lexbuf) }
   | eof                  { EOF }

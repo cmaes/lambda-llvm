@@ -39,12 +39,13 @@ let rec eval ctx env = function
   | Less (e1, e2) -> (match (eval ctx env e1), (eval ctx env e2) with
                       | VFloat f1, VFloat f2 -> VBool (f1 < f2)
                       | _ -> runtime_error "Numbers expected in <")
-  | Apply (f, e) -> let x, func_expr = lookup_func ctx f in
-                    let arg = eval ctx env e in
-                    eval ctx ((x, arg)::env) func_expr
+  | Apply (f, elist) -> let params, func_expr = lookup_func ctx f in
+                        let args = List.map (fun e -> eval ctx env e) elist in
+                        let zipped = List.combine params args in
+                        eval ctx (zipped @ env) func_expr
 
 let eval_toplevel ctx env = function
   | Expr e -> (eval ctx env e, ctx, env)
   | Def  (x, e) -> let v = (eval ctx env e) in
                    (VNull, ctx, ((x, v) :: env))
-  | Fun (f, x, e) -> (VNull, (f, (x, e)) :: ctx, env)
+  | Fun (f, args, e) -> (VNull, (f, (args, e)) :: ctx, env)

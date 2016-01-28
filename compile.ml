@@ -1,16 +1,17 @@
 open Syntax
 open Llvm
-
+open Llvm_executionengine
 
 exception Compile_error of string
 let compiler_error msg = raise (Compile_error msg)
 
 let context = global_context ()
-let the_module = create_module context "lambda jit"
+let the_module = create_module context "lambda module"
 let builder = builder context
 let named_values: (ident, llvalue) Hashtbl.t = Hashtbl.create 10
 let double_type = double_type context
 let bool_type = i1_type context
+let void_type = void_type context
 
 let lookup x =
   try
@@ -32,15 +33,15 @@ let rec compile_expr = function
   | Minus (e1, e2) -> build_fsub (compile_expr e1) (compile_expr e2) "subtmp" builder
   | Equal (e1, e2) -> build_fcmp Fcmp.Ueq (compile_expr e1) (compile_expr e2) "eqtmp" builder
   | Less (e1, e2) -> build_fcmp Fcmp.Ule (compile_expr e1) (compile_expr e2) "letmp" builder
-  | Apply (f, e) ->  let callee =
+  | Apply (f, elist) ->  let callee =
                        match lookup_function f the_module with
                        | Some func -> func
                        | None -> compiler_error ("Function " ^ f ^ " not found")
                      in
                      let params = params callee in
 
-                     if Array.length params == 1 then () else compiler_error "Incorrect # of args passed";
-                     let args = Array.map compile_expr [| e |] in
+                     if Array.length params == List.length elist then () else compiler_error "Incorrect # of args passed";
+                     let args = Array.map compile_expr (Array.of_list elist) in
                      build_call callee args "calltmp" builder
 
 let compile_prototype name args =
@@ -61,28 +62,87 @@ let compile_prototype name args =
               ) (params f);
   f
 
-let compile_toplevel = function
+let compile_func the_fpm f args e =
+  Hashtbl.clear named_values;
+  let the_function = compile_prototype f args in
+
+  (* Create a new basic block to start insertion into *)
+  let bb = append_block context "entry" the_function in
+  position_at_end bb builder;
+
+  try
+    let ret_val = compile_expr e in
+
+    (* Finish off the function *)
+    let _ = build_ret ret_val builder in
+
+    (* Validate the generate code, checking for consistency *)
+    Llvm_analysis.assert_valid_function the_function;
+
+    (* Optimize the function *)
+    let _ = PassManager.run_function the_function the_fpm in
+
+    the_function
+  with e ->
+    delete_function the_function;
+    raise e
+
+
+
+let compile_function the_fpm = function
+  | Fun (f, args, e) -> compile_func the_fpm f (Array.of_list args) e
+  | _ -> compiler_error "Function expected"
+
+let compile_defn = function
+  | Def(x, e) -> let v = compile_expr e in
+                 Hashtbl.add named_values x v
+  | _ -> compiler_error "Definition expected"
+
+let compile_topexpr = function
   | Expr e -> compile_expr e
-  | Def (x, e) -> let v = compile_expr e in
-                  Hashtbl.add named_values x v;
-                  v
-  | Fun (f, x, e) -> Hashtbl.clear named_values;
-                     let the_function = compile_prototype f [| x |] in
+  | _ -> compiler_error "Expression expected"
 
-                     (* Create a new basic block to start insertion into *)
-                     let bb = append_block context "entry" the_function in
-                     position_at_end bb builder;
+let is_fundef = function
+  | Fun _ -> true
+  | _ -> false
 
-                     try
-                       let ret_val = compile_expr e in
+let is_def = function
+  | Def _ -> true
+  | _ -> false
 
-                       (* Finish off the function *)
-                       let _ = build_ret ret_val builder in
+let is_expr = function
+  | Expr _ -> true
+  | _ -> false
 
-                       (* Validate the generate code, checking for consistency *)
-                       Llvm_analysis.assert_valid_function the_function;
+let compile_program the_fpm program =
+  let funs = List.filter is_fundef program in
+  let defs = List.filter is_def program in
+  let exprs = List.filter is_expr program in
 
-                       the_function
-                     with e ->
-                       delete_function the_function;
-                       raise e
+  let protos = List.map (fun e -> compile_function the_fpm e) funs in
+
+  (* Create an entry point function (lambda_main) *)
+  let ft = function_type double_type [| |] in
+  let lambda_main =  declare_function "lambda_main" ft the_module in
+
+  (* Create a new basic block to start insertion into *)
+  let bb = append_block context "entry" lambda_main in
+  position_at_end bb builder;
+
+  (* Clear previous names *)
+  Hashtbl.clear named_values;
+
+  (* Compile toplevel defintions *)
+  List.iter compile_defn defs;
+
+  (* Compile expr and return it *)
+  let ret_val = compile_topexpr (List.hd exprs) in
+
+  (* Finish off the function *)
+  let _ = build_ret ret_val builder in
+
+  (* Validate the generate code, checking for consistency *)
+  Llvm_analysis.assert_valid_function lambda_main;
+
+  (* Optimize the function *)
+  let _ = PassManager.run_function lambda_main the_fpm in ()
