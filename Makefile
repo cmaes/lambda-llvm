@@ -1,6 +1,6 @@
 all: lambda.byte
 
-OBJECTS = syntax.cmo lexer.cmo parser.cmo prettyprint.cmo eval.cmo
+OBJECTS = syntax.cmo lexer.cmo parser.cmo prettyprint.cmo eval.cmo compile.cmo
 
 lexer.ml: lexer.mll
 	ocamllex lexer.mll
@@ -24,8 +24,11 @@ prettyprint.cmo: prettyprint.ml syntax.ml
 eval.cmo: eval.ml syntax.ml
 	ocamlc -c eval.ml
 
+compile.cmo: compile.ml syntax.ml
+	ocamlfind ocamlc -c -package llvm compile.ml
+
 lambda.byte: lambda.ml $(OBJECTS)
-	ocamlfind ocamlc -linkpkg $(OBJECTS) lambda.ml -o lambda.byte
+	ocamlfind ocamlc -package llvm,llvm.analysis -linkpkg $(OBJECTS) lambda.ml -o lambda.byte
 
 clean:
 	-rm lexer.ml parser.ml parser.mli *.cmo *.cmi

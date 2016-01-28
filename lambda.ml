@@ -10,19 +10,21 @@ let repl base_ctx base_env =
   try
     while true do
       try
-        print_string "Lambda> ";
+        print_string "Lambda> "; flush stdout;
         let str = read_line () in
         let ast = Parser.toplevel Lexer.token (Lexing.from_string str) in
-        let value, ctx', env' = (eval_toplevel !ctx !env ast) in
+        (* let value, ctx', env' = (eval_toplevel !ctx !env ast) in
         Prettyprint.print_value value;
         ctx := ctx';
-        env := env';
+        env := env'; *)
+        Llvm.dump_value (Compile.compile_toplevel ast)
       with
       | Parser.Error -> print_endline "Syntax error"
       | Eval.Runtime_error msg -> print_endline ("Runtime error: " ^ msg)
     done
   with
-    End_of_file -> print_endline "\nGoodbye."
+    End_of_file -> (Llvm.dump_module Compile.the_module;
+                    print_endline "\nGoodbye.")
 
 
 
