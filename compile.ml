@@ -19,8 +19,16 @@ let lookup x =
   with
   | Not_found -> compiler_error ("Variable " ^ x ^ " not found")
 
+(* Create an alloca instruction in the entry block of the function.
+ *  This is used for mutable variables, etc. *)
+let create_entry_block_alloca the_function var_name =
+  let builder = builder_at context (instr_begin (entry_block the_function)) in
+  build_alloca double_type var_name builder
+
 let rec compile_expr = function
-  | Var x -> lookup x
+  | Var x -> let v = lookup x in
+             (* Load the value *)
+             build_load v x builder
   | Number f -> const_float double_type f
   | Bool b -> let v = match b with
                 | true -> 1
@@ -85,12 +93,39 @@ let rec compile_expr = function
 
      phi
   | For (i, s, f, st, body) ->
-    (* Emit the start code first, without variable in scope *)
+     (* Output this as:
+      * var = alloca double
+      * ...
+      * start = startexpr
+      * store start -> var
+      * goto loop
+      * loop:
+      *   ...
+      *   bodyexpr
+      *   ...
+      * loopend:
+      *   step = stepexpr
+      *   endcond = endexpr
+      *
+      * curvar = load var
+      * nextvar = curvar + step
+      * store nextvar -> var
+      * br endcond, loop, endloop
+      *
+      * endloop: *)
+
+     let the_function = block_parent (insertion_block builder) in
+
+    (* Create an alloca for the variable in the entry block *)
+     let alloca = create_entry_block_alloca the_function i in
+
+    (* Emit the start code first, without 'variable' in scope *)
      let start_val = compile_expr s in
 
+    (* Store the value into the alloca *)
+     ignore (build_store start_val alloca builder);
+
     (* Make the new basic block for the loop header, inserting after the current block *)
-     let preheader_bb = insertion_block builder in
-     let the_function = block_parent preheader_bb in
      let loop_bb = append_block context "loop" the_function in
 
     (* Insert an explict fall through from the current block to the loop_bb *)
@@ -99,15 +134,12 @@ let rec compile_expr = function
     (* Start insertion into loop_bb *)
      position_at_end loop_bb builder;
 
-    (* Start the PHI node with an entry for start *)
-     let variable = build_phi [(start_val, preheader_bb)] i builder in
-
-    (* Within the loop, the variable is defined equal to the Phi node. If it shadows
+    (* Within the loop, the variable is defined equal to the alloca. If it shadows
      * an existing variable, we have to restore it, so save it now *)
      let old_val =
        try Some (Hashtbl.find named_values i) with Not_found -> None
      in
-     Hashtbl.add named_values i variable;
+     Hashtbl.add named_values i alloca;
 
     (* Emit the body of the loop. This, like any other expr, can change the current BB.
      * Note that we ignore the value computed by the body, but we don't allow an error *)
@@ -120,13 +152,16 @@ let rec compile_expr = function
        | None      -> const_float double_type 1.0
      in
 
-     let next_var = build_fadd variable step_val "nextvar" builder in
-
     (* Compute the end condition *)
      let end_cond = compile_expr f in
 
+    (* Reload, increment, and restore the alloca. This handles the case where
+     * the body of the loop mutates the variable *)
+     let cur_var = build_load alloca i builder in
+     let next_var = build_fadd cur_var step_val "nextvar" builder in
+     ignore(build_store next_var alloca builder);
+
     (* Create the "after loop" block and insert it *)
-     let loop_end_bb = insertion_block builder in
      let after_bb  = append_block  context "afterloop" the_function in
 
     (* Insert the conditional branch into the end of the loop end_bb *)
@@ -134,9 +169,6 @@ let rec compile_expr = function
 
     (* Any new code will be inserted in after_bb *)
      position_at_end after_bb builder;
-
-    (* Add a new entry to the Phi node for the backedge *)
-     add_incoming (next_var, loop_end_bb) variable;
 
     (* Restore the unshadowed variable *)
      begin match old_val with
@@ -157,6 +189,22 @@ let rec compile_expr = function
                      if Array.length params == List.length elist then () else compiler_error "Incorrect # of args passed";
                      let args = Array.map compile_expr (Array.of_list elist) in
                      build_call callee args "calltmp" builder
+
+(* Create an alloca for each argument and register the argument in the
+   symbol table so that references to it will succeed *)
+let create_argument_allocas the_function args =
+  Array.iteri (fun i ai ->
+               let var_name = args.(i) in
+               (* Create an alloca for this variable *)
+               let alloca = create_entry_block_alloca the_function var_name in
+
+               (* Store the initial value into the alloca *)
+               ignore (build_store ai alloca builder);
+
+               (* Add arguments to the variable symbol table *)
+               Hashtbl.add named_values var_name alloca;
+              )
+              (params the_function)
 
 let compile_prototype name args =
   (* Make the function type: double(double, double) etc. *)
@@ -185,6 +233,9 @@ let compile_func the_fpm f args e =
   position_at_end bb builder;
 
   try
+    (* Add all arguments to the symbol table and create their allocas *)
+    create_argument_allocas the_function args;
+
     let ret_val = compile_expr e in
 
     (* Finish off the function *)

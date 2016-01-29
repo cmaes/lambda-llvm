@@ -64,6 +64,9 @@ let compile fname =
 
   let the_fpm = PassManager.create_function Compile.the_module in
 
+  (* Promote allocas to registers *)
+  add_memory_to_register_promotion the_fpm;
+
   (* Do simple "peephole" and bit-twiddling optimizations *)
   add_instruction_combination the_fpm;
 
