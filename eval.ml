@@ -52,18 +52,28 @@ let rec eval ctx env = function
                                                         | None   -> VFloat 1.0) in
                             let loopvar  = ref start in
                             while !loopvar < final do
-                              ignore (eval ctx ((i, (VFloat !loopvar))::env) b);
+                              List.iter (fun e ->
+                                         ignore(eval ctx ((i, (VFloat !loopvar))::env) e))
+                                         b;
                               loopvar := !loopvar +. step
                             done;
                             VFloat 0.0
-  | Apply (f, elist) -> let params, func_expr = lookup_func ctx f in
+  | Apply (f, elist) -> let params, func_exprs = lookup_func ctx f in
                         let args = List.map (fun e -> eval ctx env e) elist in
                         let zipped = List.combine params args in
-                        eval ctx (zipped @ env) func_expr
+                        let extended_env = zipped @ env in
+                        eval_exprs ctx extended_env func_exprs
+  and
+    eval_exprs ctx env = function
+    | []  -> VFloat 0.0
+    | [e] -> eval ctx env e
+    | e::t -> ignore(eval ctx env e); eval_exprs ctx env t
 
 let eval_toplevel ctx env = function
   | Expr e -> (eval ctx env e, ctx, env)
-  | Extern (f, args) -> (VNull, (f, (args, Number 0.)) :: ctx, env)
+  | Extern (f, args) -> let e = Number 0. in
+                        let pair = (args, [e]) in
+                        (VNull, (f, pair) :: ctx, env)
   | Def  (x, e) -> let v = (eval ctx env e) in
                    (VNull, ctx, ((x, v) :: env))
-  | Fun (f, args, e) -> (VNull, (f, (args, e)) :: ctx, env)
+  | Fun (f, args, body) -> (VNull, (f, (args, body)) :: ctx, env)

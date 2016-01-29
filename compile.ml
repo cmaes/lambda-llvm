@@ -143,7 +143,7 @@ let rec compile_expr = function
 
     (* Emit the body of the loop. This, like any other expr, can change the current BB.
      * Note that we ignore the value computed by the body, but we don't allow an error *)
-     ignore (compile_expr body);
+     ignore (compile_exprs body);
 
     (* Emit the step value *)
      let step_val =
@@ -189,6 +189,13 @@ let rec compile_expr = function
                      if Array.length params == List.length elist then () else compiler_error "Incorrect # of args passed";
                      let args = Array.map compile_expr (Array.of_list elist) in
                      build_call callee args "calltmp" builder
+  and
+    compile_exprs  = function
+    | []     ->  const_null double_type
+    | [e]    -> compile_expr e
+    | e :: t -> ignore (compile_expr e);
+                compile_exprs t
+
 
 (* Create an alloca for each argument and register the argument in the
    symbol table so that references to it will succeed *)
@@ -224,7 +231,7 @@ let compile_prototype name args =
               ) (params f);
   f
 
-let compile_func the_fpm f args e =
+let compile_func the_fpm f args body =
   Hashtbl.clear named_values;
   let the_function = compile_prototype f args in
 
@@ -236,7 +243,7 @@ let compile_func the_fpm f args e =
     (* Add all arguments to the symbol table and create their allocas *)
     create_argument_allocas the_function args;
 
-    let ret_val = compile_expr e in
+    let ret_val = compile_exprs body in
 
     (* Finish off the function *)
     let _ = build_ret ret_val builder in
@@ -256,12 +263,22 @@ let compile_func the_fpm f args e =
 
 let compile_function the_fpm = function
   | Extern (f, args) -> (f, compile_prototype f (Array.of_list args))
-  | Fun (f, args, e) -> (f, compile_func the_fpm f (Array.of_list args) e)
+  | Fun (f, args, body) -> (f, compile_func the_fpm f (Array.of_list args) body)
   | _ -> compiler_error "Function expected"
 
-let compile_defn = function
-  | Def(x, e) -> let v = compile_expr e in
-                 Hashtbl.add named_values x v
+let compile_defn the_function = function
+  | Def(x, expr) ->
+     (* var = alloca double
+      * value = expr
+      * store value -> var *)
+
+     (* Create an alloca for the variable in the entry block *)
+     let alloca = create_entry_block_alloca the_function x in
+     let value = compile_expr expr in
+
+     (* Store the value into the alloca *)
+     ignore (build_store value alloca builder);
+     Hashtbl.add named_values x alloca
   | _ -> compiler_error "Definition expected"
 
 let rec compile_topexprs = function
@@ -306,7 +323,7 @@ let compile_program the_fpm program =
   List.iter (fun (name, p) -> Hashtbl.add named_values name p) protos;
 
   (* Compile toplevel defintions *)
-  List.iter compile_defn defs;
+  List.iter (fun d -> compile_defn lambda_main d) defs;
 
   (* Compile expr and return it *)
   let ret_val = compile_topexprs exprs in

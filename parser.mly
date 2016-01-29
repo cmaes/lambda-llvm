@@ -24,7 +24,6 @@
 %token THEN
 %token ELSE
 %token FOR
-%token IN
 %token EXTERN
 %token EOF
 
@@ -35,7 +34,6 @@
 %type <Syntax.toplevel_cmd> toplevel
 
 (* the order of the following is important to define precedence *)
-%nonassoc IN
 %nonassoc ELSE
 %nonassoc EQUALEQUAL
 %nonassoc LESS
@@ -86,18 +84,22 @@ cond_expr:
     { If (pred, conseq, altern) }
 
 for_expr:
-  | FOR; i = IDENT; EQUAL; start = expr; COMMA; final = expr; IN; body = expr
+  | FOR; i = IDENT; EQUAL; start = expr; COMMA; final = expr; LBRACE; body = expr_seq; RBRACE
     { For(i, start, final, None, body) }
-  | FOR; i = IDENT; EQUAL; start = expr; COMMA; final = expr; COMMA; step = expr; IN; body = expr
+  | FOR; i = IDENT; EQUAL; start = expr; COMMA; final = expr; COMMA; step = expr; LBRACE; body = expr_seq; RBRACE
     { For(i, start, final, Some step, body) }
 
 func_def:
-  | FUN; f = IDENT; LPAREN; args = ident_list; RPAREN; LBRACE; e = expr; RBRACE
-    { Fun(f, args, e) }
+  | FUN; f = IDENT; LPAREN; args = ident_list; RPAREN; LBRACE; body = expr_seq; RBRACE
+    { Fun(f, args, body) }
 
 extern_def:
   | EXTERN; f = IDENT; LPAREN; args = ident_list; RPAREN;
     { Extern(f, args) }
+
+expr_seq:
+  | e = expr;                        { [e] }
+  | e = expr; SEMI; el = expr_seq    { e:: el }
 
 expr_list:
   |                                  { []    }

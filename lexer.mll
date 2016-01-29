@@ -35,7 +35,6 @@ rule token = parse
   | "then"               { THEN }
   | "else"               { ELSE }
   | "for"                { FOR }
-  | "in"                 { IN }
   | "extern"             { EXTERN }
   | ident                { IDENT (lexeme lexbuf) }
   | eof                  { EOF }

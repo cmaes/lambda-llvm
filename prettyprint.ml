@@ -25,7 +25,7 @@ let rec string_of_expr e = to_str (-1) e
       | Number n -> (5, Printf.sprintf "%g" n)
       | For (i, s, f, stp, b) ->
          let init = "for " ^ i ^ " = " ^ (to_str (-1) s) ^ ", " ^ (to_str (-1) f) in
-         let body = (" in " ^ (to_str (-1) b)) in
+         let body = " { " ^ (List.fold_left (fun acc e -> acc ^ (to_str (-1) e) ^ ";") "" b) ^ " } " in
          begin match stp with
                | Some step -> (5, init ^ ", " ^ (to_str (-1) step) ^ body)
                | None ->      (5, init ^ body)

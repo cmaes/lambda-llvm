@@ -1,3 +1,6 @@
-fun succ (n) { n + 1 }
-let p = 10;;
-succ(p);;
+fun succ (n) {
+    n + 1
+}
+let p = 10;
+let q = 2;
+succ(p + q);
