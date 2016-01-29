@@ -33,56 +33,120 @@ let rec compile_expr = function
   | Minus (e1, e2) -> build_fsub (compile_expr e1) (compile_expr e2) "subtmp" builder
   | Equal (e1, e2) -> build_fcmp Fcmp.Ueq (compile_expr e1) (compile_expr e2) "eqtmp" builder
   | Less (e1, e2) -> build_fcmp Fcmp.Ult (compile_expr e1) (compile_expr e2) "letmp" builder
-  | If (pe, ce, ae) -> let pred = compile_expr pe in
+  | If (pe, ce, ae) ->
+     let pred = compile_expr pe in
 
-                       (* Grab the first block so that we might later add the
-                          conditional branch to it at the end of the function *)
-                       let start_bb = insertion_block builder in
-                       let the_function = block_parent start_bb in
+     (* Grab the first block so that we might later add the
+      * conditional branch to it at the end of the function *)
+     let start_bb = insertion_block builder in
+     let the_function = block_parent start_bb in
 
-                       let then_bb = append_block context "then" the_function in
+     let then_bb = append_block context "then" the_function in
 
-                       (* Emit 'then' value *)
+     (* Emit 'then' value *)
 
-                       position_at_end then_bb builder;
-                       let then_val = compile_expr ce in
+     position_at_end then_bb builder;
+     let then_val = compile_expr ce in
 
-                       (* Compilation of 'then' can change the current block, update then_bb
-                        * for the phi. We create a new because one is used for the phi node
-                        * and the other is used for the conditional branch *)
-                       let new_then_bb = insertion_block builder in
+     (* Compilation of 'then' can change the current block, update then_bb
+      * for the phi. We create a new because one is used for the phi node
+      * and the other is used for the conditional branch *)
+     let new_then_bb = insertion_block builder in
 
-                       (* Emit 'else' value *)
-                       let else_bb = append_block context "else" the_function in
-                       position_at_end else_bb builder;
-                       let else_val = compile_expr ae; in
+     (* Emit 'else' value *)
+     let else_bb = append_block context "else" the_function in
+     position_at_end else_bb builder;
+     let else_val = compile_expr ae; in
 
-                       (* Compilation of 'else' can change the current block, update else_bb
-                          for the phi. *)
+     (* Compilation of 'else' can change the current block, update else_bb
+      * for the phi. *)
 
-                       let new_else_bb = insertion_block builder in
+     let new_else_bb = insertion_block builder in
 
-                       (* Emit the merge block *)
-                       let merge_bb = append_block context "ifcont" the_function in
-                       position_at_end merge_bb builder;
-                       let incoming = [(then_val, new_then_bb); (else_val, new_else_bb)] in
-                       let phi = build_phi incoming "iftmp" builder in
+     (* Emit the merge block *)
+     let merge_bb = append_block context "ifcont" the_function in
+     position_at_end merge_bb builder;
+     let incoming = [(then_val, new_then_bb); (else_val, new_else_bb)] in
+     let phi = build_phi incoming "iftmp" builder in
 
-                       (* Return to the start block to add the conditional branch *)
-                       position_at_end start_bb builder;
-                       ignore (build_cond_br pred then_bb else_bb builder);
+     (* Return to the start block to add the conditional branch *)
+     position_at_end start_bb builder;
+     ignore (build_cond_br pred then_bb else_bb builder);
 
-                       (* Set an unconditional branch at the end of the 'then' block and the
-                          'else' block to the merge 'block' *)
-                       position_at_end new_then_bb builder;
-                       ignore (build_br merge_bb builder);
-                       position_at_end new_else_bb builder;
-                       ignore (build_br merge_bb builder);
+     (* Set an unconditional branch at the end of the 'then' block and the
+      * 'else' block to the merge 'block' *)
+     position_at_end new_then_bb builder;
+     ignore (build_br merge_bb builder);
+     position_at_end new_else_bb builder;
+     ignore (build_br merge_bb builder);
 
-                       (* Finally, set the builder to the end of the merge block *)
-                       position_at_end merge_bb builder;
+     (* Finally, set the builder to the end of the merge block *)
+     position_at_end merge_bb builder;
 
-                       phi
+     phi
+  | For (i, s, f, st, body) ->
+    (* Emit the start code first, without variable in scope *)
+     let start_val = compile_expr s in
+
+    (* Make the new basic block for the loop header, inserting after the current block *)
+     let preheader_bb = insertion_block builder in
+     let the_function = block_parent preheader_bb in
+     let loop_bb = append_block context "loop" the_function in
+
+    (* Insert an explict fall through from the current block to the loop_bb *)
+     ignore (build_br loop_bb builder);
+
+    (* Start insertion into loop_bb *)
+     position_at_end loop_bb builder;
+
+    (* Start the PHI node with an entry for start *)
+     let variable = build_phi [(start_val, preheader_bb)] i builder in
+
+    (* Within the loop, the variable is defined equal to the Phi node. If it shadows
+     * an existing variable, we have to restore it, so save it now *)
+     let old_val =
+       try Some (Hashtbl.find named_values i) with Not_found -> None
+     in
+     Hashtbl.add named_values i variable;
+
+    (* Emit the body of the loop. This, like any other expr, can change the current BB.
+     * Note that we ignore the value computed by the body, but we don't allow an error *)
+     ignore (compile_expr body);
+
+    (* Emit the step value *)
+     let step_val =
+       match st with
+       | Some step -> compile_expr step
+       | None      -> const_float double_type 1.0
+     in
+
+     let next_var = build_fadd variable step_val "nextvar" builder in
+
+    (* Compute the end condition *)
+     let end_cond = compile_expr f in
+
+    (* Create the "after loop" block and insert it *)
+     let loop_end_bb = insertion_block builder in
+     let after_bb  = append_block  context "afterloop" the_function in
+
+    (* Insert the conditional branch into the end of the loop end_bb *)
+     ignore (build_cond_br end_cond loop_bb after_bb builder);
+
+    (* Any new code will be inserted in after_bb *)
+     position_at_end after_bb builder;
+
+    (* Add a new entry to the Phi node for the backedge *)
+     add_incoming (next_var, loop_end_bb) variable;
+
+    (* Restore the unshadowed variable *)
+     begin match old_val with
+           | Some old_val -> Hashtbl.add named_values i old_val
+           | None -> ()
+     end;
+
+    (* for expr always returns 0.0 *)
+     const_null double_type
+
   | Apply (f, elist) ->  let callee =
                        match lookup_function f the_module with
                        | Some func -> func
@@ -140,7 +204,8 @@ let compile_func the_fpm f args e =
 
 
 let compile_function the_fpm = function
-  | Fun (f, args, e) -> compile_func the_fpm f (Array.of_list args) e
+  | Extern (f, args) -> (f, compile_prototype f (Array.of_list args))
+  | Fun (f, args, e) -> (f, compile_func the_fpm f (Array.of_list args) e)
   | _ -> compiler_error "Function expected"
 
 let compile_defn = function
@@ -148,12 +213,16 @@ let compile_defn = function
                  Hashtbl.add named_values x v
   | _ -> compiler_error "Definition expected"
 
-let compile_topexpr = function
-  | Expr e -> compile_expr e
-  | _ -> compiler_error "Expression expected"
+let rec compile_topexprs = function
+  | []     ->  const_null double_type
+  | [Expr e] -> compile_expr e
+  | (Expr e) :: t -> ignore (compile_expr e);
+                     compile_topexprs t
+  | _ -> compiler_error "List of expressions expected"
 
 let is_fundef = function
   | Fun _ -> true
+  | Extern _ -> true
   | _ -> false
 
 let is_def = function
@@ -182,11 +251,14 @@ let compile_program the_fpm program =
   (* Clear previous names *)
   Hashtbl.clear named_values;
 
+  (* Add prototypes back in *)
+  List.iter (fun (name, p) -> Hashtbl.add named_values name p) protos;
+
   (* Compile toplevel defintions *)
   List.iter compile_defn defs;
 
   (* Compile expr and return it *)
-  let ret_val = compile_topexpr (List.hd exprs) in
+  let ret_val = compile_topexprs exprs in
 
   (* Finish off the function *)
   let _ = build_ret ret_val builder in

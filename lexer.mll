@@ -8,9 +8,11 @@ let digit = ['0'-'9']
 let frac = '.' digit*
 let exp  = ['e' 'E'] ['-' '+']? digit+
 let float = digit* frac? exp?
+let comment = '#' [^ '\n' '\r']*
 
 rule token = parse
    [' ' '\t' '\r' '\n' ] { token lexbuf }
+  | comment              { token lexbuf }
   | float                { FLOAT (float_of_string (lexeme lexbuf)) }
   | "true"               { BOOL (true) }
   | "false"              { BOOL (false) }
@@ -32,5 +34,8 @@ rule token = parse
   | "if"                 { IF }
   | "then"               { THEN }
   | "else"               { ELSE }
+  | "for"                { FOR }
+  | "in"                 { IN }
+  | "extern"             { EXTERN }
   | ident                { IDENT (lexeme lexbuf) }
   | eof                  { EOF }

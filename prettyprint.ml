@@ -23,6 +23,13 @@ let rec string_of_expr e = to_str (-1) e
       | Var  v -> (5, v)
       | Bool b -> (5, string_of_bool b)
       | Number n -> (5, Printf.sprintf "%g" n)
+      | For (i, s, f, stp, b) ->
+         let init = "for " ^ i ^ " = " ^ (to_str (-1) s) ^ ", " ^ (to_str (-1) f) in
+         let body = (" in " ^ (to_str (-1) b)) in
+         begin match stp with
+               | Some step -> (5, init ^ ", " ^ (to_str (-1) step) ^ body)
+               | None ->      (5, init ^ body)
+         end
       | If (p, c, a) -> (5, "if " ^ (to_str (-1) p) ^ " then " ^ (to_str (-1) c) ^ " else " ^ to_str (-1) a)
       | Apply (f, elist) -> (5, f ^ "(" ^ (comma_seq (fun e -> to_str (-1) e) elist) ^ ")")
       | Mult  (e1, e2) -> (4, (to_str 4 e1) ^ " * " ^ (to_str 5 e2))

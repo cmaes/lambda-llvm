@@ -1,0 +1,10 @@
+extern putchard(c);
+fun printstar(n) {
+    for i = 1, i < n, 1.0 in
+       putchard(42) # ascii 42 is '*'
+}
+
+#print 80 '*' characters
+printstar(80);
+putchard(10); # asci 10 is '\n'
+42;
