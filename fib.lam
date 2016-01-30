@@ -1,7 +1,9 @@
+extern printd(x);
+
 fun fib (x) {
-   if x < 3 then
-      1
-   else
-     fib(x-1) + fib(x-2)
+   return (if x < 3 then
+            1
+          else
+           fib(x-1) + fib(x-2));
 }
-fib(20);;
+printd(fib(20));

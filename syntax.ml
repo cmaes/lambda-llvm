@@ -12,18 +12,20 @@ type expr =
   | Equal  of expr * expr           (* Floating point comparison [ e1 == e2 ] *)
   | Less   of expr * expr           (* Floating point comparison [ e1 < e2 ] *)
   | If     of expr * expr * expr    (* Conditional [ if pred then cons else altern ] *)
-  | For    of
-      ident * expr * expr * expr option * (expr list)
-                                    (* For loop [ for i=e, cmp, [step] in e *)
   | Apply  of ident * (expr list)   (* Application  [ f(e1, ..., en) ] *)
+ and stmt =
+  | Expr of expr                                           (* Expression *)
+  | For of ident * expr * expr * expr option * (stmt list) (* For loop [ for i=e, cmp, [step] in e *)
+  | Let of ident * expr                                    (* Value declaration [ let x = e ] *)
+  | Assign of ident * expr                                 (* Mutable assignment [ x = e ] *)
+  | Return of expr                                         (* Return [ return e ] *)
 
-type context = ((ident list) * (expr list)) list
+type context = ((ident list) * (stmt list)) list
 
 type toplevel_cmd =
-  | Expr of expr                               (* Expression *)
+  | Stmt of stmt                               (* Expression *)
   | Extern of ident * (ident list)             (* External declaration [ extern f(x1, ..., xn) ] *)
-  | Def of ident * expr                        (* Value definition [ let x = e ] *)
-  | Fun of ident * (ident list) * (expr list)  (* Function [ fun f(x1, ..., xn) { e } ] *)
+  | Fun of ident * (ident list) * (stmt list)  (* Function [ fun f(x1, ..., xn) { e1; ...; en } ] *)
 
 type value =
   | VNull

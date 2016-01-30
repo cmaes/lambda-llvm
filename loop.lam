@@ -2,7 +2,7 @@ extern putchard(c);
 fun printstar(n) {
     for i = 1, i < n, 1.0 {
        putchard(42); # ascii 42 is '*'
-       putchard(45) # ascii 45 is '-'
+       putchard(45); # ascii 45 is '-'
     }
 }
 
@@ -11,7 +11,7 @@ fun hello() {
   putchard(69);
   putchard(76);
   putchard(76);
-  putchard(79)
+  putchard(79);
 }
 
 #print 80 '*' characters
@@ -19,4 +19,3 @@ printstar(40);
 putchard(10); # ascii 10 is '\n'
 hello();
 putchard(10);
-42;

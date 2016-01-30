@@ -1,0 +1,9 @@
+extern printd(x);
+
+fun test(x) {
+   printd(x);
+   x = 4;
+   printd(x);
+}
+
+test(123);

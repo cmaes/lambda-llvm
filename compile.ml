@@ -13,6 +13,9 @@ let double_type = double_type context
 let bool_type = i1_type context
 let void_type = void_type context
 
+exception Return_val of llvalue
+let return_value v = raise (Return_val v)
+
 let lookup x =
   try
     Hashtbl.find named_values x
@@ -92,93 +95,6 @@ let rec compile_expr = function
      position_at_end merge_bb builder;
 
      phi
-  | For (i, s, f, st, body) ->
-     (* Output this as:
-      * var = alloca double
-      * ...
-      * start = startexpr
-      * store start -> var
-      * goto loop
-      * loop:
-      *   ...
-      *   bodyexpr
-      *   ...
-      * loopend:
-      *   step = stepexpr
-      *   endcond = endexpr
-      *
-      * curvar = load var
-      * nextvar = curvar + step
-      * store nextvar -> var
-      * br endcond, loop, endloop
-      *
-      * endloop: *)
-
-     let the_function = block_parent (insertion_block builder) in
-
-    (* Create an alloca for the variable in the entry block *)
-     let alloca = create_entry_block_alloca the_function i in
-
-    (* Emit the start code first, without 'variable' in scope *)
-     let start_val = compile_expr s in
-
-    (* Store the value into the alloca *)
-     ignore (build_store start_val alloca builder);
-
-    (* Make the new basic block for the loop header, inserting after the current block *)
-     let loop_bb = append_block context "loop" the_function in
-
-    (* Insert an explict fall through from the current block to the loop_bb *)
-     ignore (build_br loop_bb builder);
-
-    (* Start insertion into loop_bb *)
-     position_at_end loop_bb builder;
-
-    (* Within the loop, the variable is defined equal to the alloca. If it shadows
-     * an existing variable, we have to restore it, so save it now *)
-     let old_val =
-       try Some (Hashtbl.find named_values i) with Not_found -> None
-     in
-     Hashtbl.add named_values i alloca;
-
-    (* Emit the body of the loop. This, like any other expr, can change the current BB.
-     * Note that we ignore the value computed by the body, but we don't allow an error *)
-     ignore (compile_exprs body);
-
-    (* Emit the step value *)
-     let step_val =
-       match st with
-       | Some step -> compile_expr step
-       | None      -> const_float double_type 1.0
-     in
-
-    (* Compute the end condition *)
-     let end_cond = compile_expr f in
-
-    (* Reload, increment, and restore the alloca. This handles the case where
-     * the body of the loop mutates the variable *)
-     let cur_var = build_load alloca i builder in
-     let next_var = build_fadd cur_var step_val "nextvar" builder in
-     ignore(build_store next_var alloca builder);
-
-    (* Create the "after loop" block and insert it *)
-     let after_bb  = append_block  context "afterloop" the_function in
-
-    (* Insert the conditional branch into the end of the loop end_bb *)
-     ignore (build_cond_br end_cond loop_bb after_bb builder);
-
-    (* Any new code will be inserted in after_bb *)
-     position_at_end after_bb builder;
-
-    (* Restore the unshadowed variable *)
-     begin match old_val with
-           | Some old_val -> Hashtbl.add named_values i old_val
-           | None -> ()
-     end;
-
-    (* for expr always returns 0.0 *)
-     const_null double_type
-
   | Apply (f, elist) ->  let callee =
                        match lookup_function f the_module with
                        | Some func -> func
@@ -190,11 +106,113 @@ let rec compile_expr = function
                      let args = Array.map compile_expr (Array.of_list elist) in
                      build_call callee args "calltmp" builder
   and
-    compile_exprs  = function
-    | []     ->  const_null double_type
-    | [e]    -> compile_expr e
-    | e :: t -> ignore (compile_expr e);
-                compile_exprs t
+    compile_stmt = function
+    | Expr e -> ignore (compile_expr e)
+    | For (i, s, f, st, body) ->
+       (* Output this as:
+        * var = alloca double
+        * ...
+        * start = startexpr
+        * store start -> var
+        * goto loop
+        * loop:
+        *   ...
+        *   bodyexpr
+        *   ...
+        * loopend:
+        *   step = stepexpr
+        *   endcond = endexpr
+        *
+        * curvar = load var
+        * nextvar = curvar + step
+        * store nextvar -> var
+        * br endcond, loop, endloop
+        *
+        * endloop: *)
+
+       let the_function = block_parent (insertion_block builder) in
+
+       (* Create an alloca for the variable in the entry block *)
+       let alloca = create_entry_block_alloca the_function i in
+
+       (* Emit the start code first, without 'variable' in scope *)
+       let start_val = compile_expr s in
+
+       (* Store the value into the alloca *)
+       ignore (build_store start_val alloca builder);
+
+       (* Make the new basic block for the loop header, inserting after the current block *)
+       let loop_bb = append_block context "loop" the_function in
+
+       (* Insert an explict fall through from the current block to the loop_bb *)
+       ignore (build_br loop_bb builder);
+
+       (* Start insertion into loop_bb *)
+       position_at_end loop_bb builder;
+
+       (* Within the loop, the variable is defined equal to the alloca. If it shadows
+        * an existing variable, we have to restore it, so save it now *)
+       let old_val =
+         try Some (Hashtbl.find named_values i) with Not_found -> None
+       in
+       Hashtbl.add named_values i alloca;
+
+       (* Emit the body of the loop. This, like any other expr, can change the current BB.
+        * Note that we ignore the value computed by the body, but we don't allow an error *)
+       compile_stmts body;
+
+       (* Emit the step value *)
+       let step_val =
+         match st with
+         | Some step -> compile_expr step
+         | None      -> const_float double_type 1.0
+       in
+
+       (* Compute the end condition *)
+       let end_cond = compile_expr f in
+
+       (* Reload, increment, and restore the alloca. This handles the case where
+        * the body of the loop mutates the variable *)
+       let cur_var = build_load alloca i builder in
+       let next_var = build_fadd cur_var step_val "nextvar" builder in
+       ignore(build_store next_var alloca builder);
+
+       (* Create the "after loop" block and insert it *)
+       let after_bb  = append_block  context "afterloop" the_function in
+
+       (* Insert the conditional branch into the end of the loop end_bb *)
+       ignore (build_cond_br end_cond loop_bb after_bb builder);
+
+       (* Any new code will be inserted in after_bb *)
+       position_at_end after_bb builder;
+
+       (* Restore the unshadowed variable *)
+       begin match old_val with
+             | Some old_val -> Hashtbl.add named_values i old_val
+             | None -> ()
+       end
+    | Let (x, expr) ->
+       (* var = alloca double
+        * value = expr
+        * store value -> var *)
+       let the_function = block_parent (insertion_block builder) in
+
+       (* Create an alloca for the variable in the entry block *)
+       let alloca = create_entry_block_alloca the_function x in
+       let value = compile_expr expr in
+
+       (* Store the value into the alloca *)
+       ignore (build_store value alloca builder);
+       Hashtbl.add named_values x alloca;
+    | Assign (x, expr) -> let value = compile_expr expr in
+                          let var   = lookup x in
+                          ignore (build_store value var builder);
+    | Return expr -> return_value (compile_expr expr)
+  and
+    compile_stmts  = function
+    | []     -> ()
+    | [s]    -> compile_stmt s
+    | s :: t -> compile_stmt s; compile_stmts t
 
 
 (* Create an alloca for each argument and register the argument in the
@@ -243,7 +261,13 @@ let compile_func the_fpm f args body =
     (* Add all arguments to the symbol table and create their allocas *)
     create_argument_allocas the_function args;
 
-    let ret_val = compile_exprs body in
+    let ret_val =
+      try
+        compile_stmts body;
+        const_null double_type
+      with
+        Return_val v -> v
+    in
 
     (* Finish off the function *)
     let _ = build_ret ret_val builder in
@@ -266,46 +290,22 @@ let compile_function the_fpm = function
   | Fun (f, args, body) -> (f, compile_func the_fpm f (Array.of_list args) body)
   | _ -> compiler_error "Function expected"
 
-let compile_defn the_function = function
-  | Def(x, expr) ->
-     (* var = alloca double
-      * value = expr
-      * store value -> var *)
-
-     (* Create an alloca for the variable in the entry block *)
-     let alloca = create_entry_block_alloca the_function x in
-     let value = compile_expr expr in
-
-     (* Store the value into the alloca *)
-     ignore (build_store value alloca builder);
-     Hashtbl.add named_values x alloca
-  | _ -> compiler_error "Definition expected"
-
-let rec compile_topexprs = function
-  | []     ->  const_null double_type
-  | [Expr e] -> compile_expr e
-  | (Expr e) :: t -> ignore (compile_expr e);
-                     compile_topexprs t
-  | _ -> compiler_error "List of expressions expected"
-
 let is_fundef = function
   | Fun _ -> true
   | Extern _ -> true
   | _ -> false
 
-let is_def = function
-  | Def _ -> true
+let is_stmt = function
+  | Stmt _ -> true
   | _ -> false
 
-let is_expr = function
-  | Expr _ -> true
-  | _ -> false
+let stmt_of_toplevel = function
+  | Stmt s -> s
+  | _ -> compiler_error "Statement expected"
 
 let compile_program the_fpm program =
   let funs = List.filter is_fundef program in
-  let defs = List.filter is_def program in
-  let exprs = List.filter is_expr program in
-
+  let stmts = List.map stmt_of_toplevel (List.filter is_stmt program) in
   let protos = List.map (fun e -> compile_function the_fpm e) funs in
 
   (* Create an entry point function (lambda_main) *)
@@ -322,11 +322,14 @@ let compile_program the_fpm program =
   (* Add prototypes back in *)
   List.iter (fun (name, p) -> Hashtbl.add named_values name p) protos;
 
-  (* Compile toplevel defintions *)
-  List.iter (fun d -> compile_defn lambda_main d) defs;
-
-  (* Compile expr and return it *)
-  let ret_val = compile_topexprs exprs in
+  (* Compile statements *)
+  let ret_val =
+    try
+      compile_stmts stmts;
+      const_null double_type
+    with
+    | Return_val v -> v
+  in
 
   (* Finish off the function *)
   let _ = build_ret ret_val builder in

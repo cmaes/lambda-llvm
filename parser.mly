@@ -25,6 +25,7 @@
 %token ELSE
 %token FOR
 %token EXTERN
+%token RETURN
 %token EOF
 
 %start program
@@ -46,10 +47,16 @@ program:
  | t = toplevel; l = program;               { t :: l }
 
 toplevel:
- | e = expr; SEMI;                             { Expr e }
- | LET; x = IDENT; EQUAL; e = expr; SEMI;      { Def (x, e) }
+ | s = stmt;                                   { Stmt s }
  | f = func_def;                               { f }
  | e = extern_def; SEMI                        { e }
+
+stmt:
+ | e = expr; SEMI;                             { Expr e }
+ | LET; x = IDENT; EQUAL; e = expr; SEMI;      { Let (x, e) }
+ | f = for_expr                                { f }
+ | x = IDENT; EQUAL; e = expr; SEMI            { Assign(x, e) }
+ | RETURN; e = expr; SEMI                      { Return e }
 
 expr:
   | s = simple_expr { s }
@@ -57,7 +64,7 @@ expr:
   | a  = arith_expr { a }
   | b = bool_expr   { b }
   | c = cond_expr   { c }
-  | f = for_expr    { f }
+
 
 simple_expr:
   | x = IDENT                 { Var x }
@@ -84,22 +91,22 @@ cond_expr:
     { If (pred, conseq, altern) }
 
 for_expr:
-  | FOR; i = IDENT; EQUAL; start = expr; COMMA; final = expr; LBRACE; body = expr_seq; RBRACE
+  | FOR; i = IDENT; EQUAL; start = expr; COMMA; final = expr; LBRACE; body = stmt_seq; RBRACE
     { For(i, start, final, None, body) }
-  | FOR; i = IDENT; EQUAL; start = expr; COMMA; final = expr; COMMA; step = expr; LBRACE; body = expr_seq; RBRACE
+  | FOR; i = IDENT; EQUAL; start = expr; COMMA; final = expr; COMMA; step = expr; LBRACE; body = stmt_seq; RBRACE
     { For(i, start, final, Some step, body) }
 
 func_def:
-  | FUN; f = IDENT; LPAREN; args = ident_list; RPAREN; LBRACE; body = expr_seq; RBRACE
+  | FUN; f = IDENT; LPAREN; args = ident_list; RPAREN; LBRACE; body = stmt_seq; RBRACE
     { Fun(f, args, body) }
 
 extern_def:
   | EXTERN; f = IDENT; LPAREN; args = ident_list; RPAREN;
     { Extern(f, args) }
 
-expr_seq:
-  | e = expr;                        { [e] }
-  | e = expr; SEMI; el = expr_seq    { e:: el }
+stmt_seq:
+  | s = stmt;                        { [s] }
+  | s = stmt; t = stmt_seq           { s :: t }
 
 expr_list:
   |                                  { []    }

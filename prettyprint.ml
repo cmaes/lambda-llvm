@@ -23,13 +23,6 @@ let rec string_of_expr e = to_str (-1) e
       | Var  v -> (5, v)
       | Bool b -> (5, string_of_bool b)
       | Number n -> (5, Printf.sprintf "%g" n)
-      | For (i, s, f, stp, b) ->
-         let init = "for " ^ i ^ " = " ^ (to_str (-1) s) ^ ", " ^ (to_str (-1) f) in
-         let body = " { " ^ (List.fold_left (fun acc e -> acc ^ (to_str (-1) e) ^ ";") "" b) ^ " } " in
-         begin match stp with
-               | Some step -> (5, init ^ ", " ^ (to_str (-1) step) ^ body)
-               | None ->      (5, init ^ body)
-         end
       | If (p, c, a) -> (5, "if " ^ (to_str (-1) p) ^ " then " ^ (to_str (-1) c) ^ " else " ^ to_str (-1) a)
       | Apply (f, elist) -> (5, f ^ "(" ^ (comma_seq (fun e -> to_str (-1) e) elist) ^ ")")
       | Mult  (e1, e2) -> (4, (to_str 4 e1) ^ " * " ^ (to_str 5 e2))
@@ -40,6 +33,20 @@ let rec string_of_expr e = to_str (-1) e
       | Equal     (e1, e2) -> (1, (to_str 2 e1) ^ " == " ^ (to_str 3 e2))
     in
     if m < n then "(" ^ str ^ ")" else str
+  and
+    stmt_to_str = function
+    | Expr e -> (to_str (-1) e) ^ ";"
+    | For (i, s, f, stp, b) ->
+       let init = "for " ^ i ^ " = " ^ (to_str (-1) s) ^ ", " ^ (to_str (-1) f) in
+       let body = " { " ^ (List.fold_left (fun acc s -> acc ^ (stmt_to_str s)) "" b) ^ " } " in
+       begin match stp with
+             | Some step -> (init ^ ", " ^ (to_str (-1) step) ^ body)
+             | None ->      (init ^ body)
+       end
+    | Let (x, e) -> "let " ^ x ^ " = " ^ (to_str (-1) e) ^ ";"
+    | Assign (x, e) -> x ^ " = " ^ (to_str (-1) e) ^ ";"
+    | Return e -> "return " ^ (to_str (-1) e) ^ ";"
+
 
 
 let print_value = function
